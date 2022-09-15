@@ -10,12 +10,14 @@ consensusClients:
   - lodestar
   - prysm
   - teku
+  - nimbus
  
 validatorClients:
   - lighthouse
   - lodestar
   - prysm
   - teku
+  - nimbus
 
 logs:
   logLevel: debug
