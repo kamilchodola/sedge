@@ -64,6 +64,9 @@ type CliCmdFlags struct {
 	clExtraFlags      *[]string
 	vlExtraFlags      *[]string
 	logging           string
+	noKeysGeneration  bool
+
+	KeysCmdFlags // Flags needed to run keystore generation proccess
 }
 
 type clientImages struct {
@@ -155,6 +158,14 @@ func CliCmd(prompt prompts.Prompt) *cobra.Command {
 	flags.clExtraFlags = cmd.Flags().StringArray("cl-extra-flag", []string{}, "Additional flag to configure the consensus client service in the generated docker-compose script. Example: 'sedge cli --cl-extra-flag \"<flag1>=value1\" --cl-extra-flag \"<flag2>=\\\"value2\\\"\"'")
 	flags.vlExtraFlags = cmd.Flags().StringArray("vl-extra-flag", []string{}, "Additional flag to configure the validator client service in the generated docker-compose script. Example: 'sedge cli --vl-extra-flag \"<flag1>=value1\" --vl-extra-flag \"<flag2>=\\\"value2\\\"\"'")
 	cmd.Flags().StringVar(&flags.logging, "logging", "json", fmt.Sprintf("Docker logging driver used by all the services. Set 'none' to use the default docker logging driver. Possible values: %v", configs.ValidLoggingFlags()))
+	// Keystore generation flags
+	cmd.Flags().BoolVar(&flags.noKeysGeneration, "no-keystores", false, "Don't generate keystores before running the validator. Use it in case the validator keystores are already generated using 'sedge keys' command")
+	cmd.Flags().StringVar(&flags.eth1WithdrawalAddress, "eth1-withdrawal-address", "", "If this field is set and valid, the given Eth1 address will be used to create the withdrawal credentials. Otherwise, it will generate withdrawal credentials with the mnemonic-derived withdrawal public key in EIP-2334 format.")
+	cmd.Flags().StringVar(&flags.mnemonicPath, "mnemonic-path", "", "Path to file with a existing mnemonic to use.")
+	cmd.Flags().StringVar(&flags.passphrasePath, "passphrase-path", "", "Path to file with a keystores passphrase to use.")
+	cmd.Flags().Int64Var(&flags.existingVal, "existing", -1, `Number of validators generated with the provided mnemonic. Will be ignored if "--mnemonic-path" its not set. This number will be used as the initial index for the generated keystores.`)
+	cmd.Flags().Int64Var(&flags.numberVal, "num-validators", -1, "Number of validators to generate. This number will be used in addition to the existing flag as the end index for the generated keystores.")
+	cmd.Flags().BoolVar(&flags.randomPassphrase, "random-passphrase", false, "Usa a randomly generated passphrase to encrypt keystores.")
 	// TODO: check if this condition is still necessary
 	cmd.Flags().SortFlags = false
 	return cmd
@@ -378,6 +389,15 @@ func runCliCmd(cmd *cobra.Command, args []string, flags *CliCmdFlags, clientImag
 
 	if !flags.noValidator {
 		log.Info(configs.ValidatorTips)
+
+		// Generate keystores
+		if !flags.noKeysGeneration {
+			// Fix flags
+			flags.KeysCmdFlags.network = flags.network
+			flags.KeysCmdFlags.path = flags.path
+			flags.KeysCmdFlags.install = false // Do not install twice
+			runSedgeKeysCmd(cmd, args, prompt, flags.KeysCmdFlags)
+		}
 
 		// Run validator after execution and consensus clients are synced, unless the user intencionally wants to run the validator service in the previous step
 		if !utils.Contains(*flags.services, validator) {

@@ -41,11 +41,8 @@ type KeysCmdFlags struct {
 }
 
 func KeysCmd(prompt prompts.Prompt) *cobra.Command {
-	var (
-		flags      KeysCmdFlags
-		passphrase string
-		mnemonic   string
-	)
+	var flags KeysCmdFlags
+
 	// Cmd declaration
 	cmd := &cobra.Command{
 		Use:   "keys [flags]",
@@ -65,91 +62,7 @@ func KeysCmd(prompt prompts.Prompt) *cobra.Command {
 			flags.path = absPath
 		},
 		Run: func(cmd *cobra.Command, args []string) {
-			// Handle mainnet case
-			if flags.network == "mainnet" {
-				runKeysWithStakingDeposit(cmd, args, &flags, prompt)
-				return
-			}
-
-			// TODO: allow usage of withdrawal address
-			// Get keystore passphrase
-			if !flags.randomPassphrase && flags.passphrasePath != "" {
-				content, err := readFileContent(flags.passphrasePath)
-				if err != nil {
-					log.Fatalf(configs.PassphraseReadFileError, err)
-				}
-				if len(content) < 8 {
-					log.Warn(configs.KeystorePasswordError)
-				} else {
-					passphrase = content
-				}
-			}
-			if !flags.randomPassphrase && len(passphrase) < 8 {
-				passphrase = prompt.Passphrase()
-			}
-
-			// Get or generate mnemonic
-			if flags.mnemonicPath != "" {
-				content, err := readFileContent(flags.mnemonicPath)
-				if err != nil {
-					log.Fatalf(configs.MnemonicReadFileError, err)
-				}
-				mnemonic = content
-			}
-			if mnemonic == "" {
-				log.Warn(configs.GeneratingMnemonic)
-				candidate, err := keystores.CreateMnemonic()
-				if err != nil {
-					log.Fatal(err)
-				}
-				mnemonic = candidate
-				// TODO: improve prompts for the generated mnemonic. This should confirm user have copied the mnemonic by asking to input it again.
-				// TODO: clean screen after the generated mnemonic is printed.
-				fmt.Fprintf(cmd.OutOrStdout(), "Mnemonic:\n\n%s\n\n", mnemonic)
-				prompt := promptui.Prompt{
-					Label: configs.StoreMnemonic,
-				}
-				prompt.Run()
-			}
-
-			// Get indexes
-			if flags.mnemonicPath == "" {
-				flags.existingVal = 0
-			} else if flags.existingVal < 0 {
-				flags.existingVal = prompt.ExistingVal()
-			}
-
-			if flags.numberVal <= 0 {
-				flags.numberVal = prompt.NumberVal()
-			}
-
-			keystorePath := filepath.Join(flags.path, "keystore")
-
-			data := keystores.ValidatorKeysGenData{
-				Mnemonic:    mnemonic,
-				Passphrase:  passphrase,
-				OutputPath:  keystorePath,
-				MinIndex:    uint64(flags.existingVal),
-				MaxIndex:    uint64(flags.existingVal) + uint64(flags.numberVal),
-				NetworkName: flags.network,
-				ForkVersion: configs.NetworksConfigs[flags.network].GenesisForkVersion,
-				// Constants
-				UseUniquePassphrase: true,
-				Insecure:            false,
-				AmountGwei:          uint64(eth2.Mainnet.MAX_EFFECTIVE_BALANCE),
-				AsJsonList:          true,
-			}
-
-			log.Info(configs.GeneratingKeystores)
-			if err := keystores.CreateKeystores(data); err != nil {
-				log.Fatal(err)
-			}
-			log.Info(configs.KeystoresGenerated)
-			log.Info(configs.GeneratingDepositData)
-			if err := keystores.CreateDepositData(data); err != nil {
-				log.Fatal(err)
-			}
-			log.Info(configs.DepositDataGenerated)
+			runSedgeKeysCmd(cmd, args, prompt, flags)
 		},
 	}
 	// Flag binds
@@ -163,4 +76,97 @@ func KeysCmd(prompt prompts.Prompt) *cobra.Command {
 	cmd.Flags().BoolVar(&flags.randomPassphrase, "random-passphrase", false, "Usa a randomly generated passphrase to encrypt keystores.")
 	cmd.Flags().BoolVarP(&flags.install, "install", "i", false, "Install dependencies if not installed without asking")
 	return cmd
+}
+
+func runSedgeKeysCmd(cmd *cobra.Command, args []string, prompt prompts.Prompt, flags KeysCmdFlags) {
+	var (
+		passphrase string
+		mnemonic   string
+	)
+
+	// Handle mainnet case
+	if flags.network == "mainnet" {
+		runKeysWithStakingDeposit(cmd, args, &flags, prompt)
+		return
+	}
+
+	// TODO: allow usage of withdrawal address
+	// Get keystore passphrase
+	if !flags.randomPassphrase && flags.passphrasePath != "" {
+		content, err := readFileContent(flags.passphrasePath)
+		if err != nil {
+			log.Fatalf(configs.PassphraseReadFileError, err)
+		}
+		if len(content) < 8 {
+			log.Warn(configs.KeystorePasswordError)
+		} else {
+			passphrase = content
+		}
+	}
+	if !flags.randomPassphrase && len(passphrase) < 8 {
+		passphrase = prompt.Passphrase()
+	}
+
+	// Get or generate mnemonic
+	if flags.mnemonicPath != "" {
+		content, err := readFileContent(flags.mnemonicPath)
+		if err != nil {
+			log.Fatalf(configs.MnemonicReadFileError, err)
+		}
+		mnemonic = content
+	}
+	if mnemonic == "" {
+		log.Warn(configs.GeneratingMnemonic)
+		candidate, err := keystores.CreateMnemonic()
+		if err != nil {
+			log.Fatal(err)
+		}
+		mnemonic = candidate
+		// TODO: improve prompts for the generated mnemonic. This should confirm user have copied the mnemonic by asking to input it again.
+		// TODO: clean screen after the generated mnemonic is printed.
+		fmt.Fprintf(cmd.OutOrStdout(), "Mnemonic:\n\n%s\n\n", mnemonic)
+		prompt := promptui.Prompt{
+			Label: configs.StoreMnemonic,
+		}
+		prompt.Run()
+	}
+
+	// Get indexes
+	if flags.mnemonicPath == "" {
+		flags.existingVal = 0
+	} else if flags.existingVal < 0 {
+		flags.existingVal = prompt.ExistingVal()
+	}
+
+	if flags.numberVal <= 0 {
+		flags.numberVal = prompt.NumberVal()
+	}
+
+	keystorePath := filepath.Join(flags.path, "keystore")
+
+	data := keystores.ValidatorKeysGenData{
+		Mnemonic:    mnemonic,
+		Passphrase:  passphrase,
+		OutputPath:  keystorePath,
+		MinIndex:    uint64(flags.existingVal),
+		MaxIndex:    uint64(flags.existingVal) + uint64(flags.numberVal),
+		NetworkName: flags.network,
+		ForkVersion: configs.NetworksConfigs[flags.network].GenesisForkVersion,
+		// Constants
+		UseUniquePassphrase: true,
+		Insecure:            false,
+		AmountGwei:          uint64(eth2.Mainnet.MAX_EFFECTIVE_BALANCE),
+		AsJsonList:          true,
+	}
+
+	log.Info(configs.GeneratingKeystores)
+	if err := keystores.CreateKeystores(data); err != nil {
+		log.Fatal(err)
+	}
+	log.Info(configs.KeystoresGenerated)
+	log.Info(configs.GeneratingDepositData)
+	if err := keystores.CreateDepositData(data); err != nil {
+		log.Fatal(err)
+	}
+	log.Info(configs.DepositDataGenerated)
 }
